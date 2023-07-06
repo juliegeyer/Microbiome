@@ -1,0 +1,91 @@
+QIIME 2 Code
+
+#import and demultiplex data
+qiime tools import \
+  --type 'SampleData[PairedEndSequencesWithQuality]' \
+  --input-path ch1-its-field-samples \
+  --input-format CasavaOneEightSingleLanePerSampleDirFmt \
+  --output-path demux-paired-end.qza
+
+#remove ITS sequencing adapters
+qiime cutadapt trim-paired \
+      --i-demultiplexed-sequences demux-paired-end.qza \
+      --p-cores 6 \
+      --p-front-f TTGGTCATTTAGAGGAAGTAA \
+      --p-front-r CGTTCTTCATCGATGC \
+      --o-trimmed-sequences demux-paired-end-trimmed.qza
+#for 16S datasets, the adapters removed were:
+# --p-front-f CCTAYGGGRBGCASCAG \
+# --p-front-r GGACTACNNGGGTATCTAAT  \
+
+#demultiplexed sequence counts summary
+qiime demux summarize \
+--i-data demux-paired-end-trimmed.qza \
+--o-visualization qualities.qzv
+
+#trim low-quality reads and assign taxonomy to sequencing reads
+qiime dada2 denoise-paired \
+      --i-demultiplexed-seqs demux-paired-end-trimmed.qza \
+      --p-trunc-len-f 180 --p-trunc-len-r 140 \
+      --o-representative-sequences rep-seqs.qza \
+      --o-table table.qza \
+      --o-denoising-stats stats-dada2.qza
+qiime metadata tabulate \
+      --m-input-file stats-dada2.qza \
+      --o-visualization stats-dada2.qzv
+#for chapter 1 (field, fungi) truncation values were: --p-trunc-len-f 180 --p-trunc-len-r 140 \
+#for chapter 1 (greenhouse, fungi) truncation values were: --p-trunc-len-f 180 --p-trunc-len-r 135 \
+#for chapter 2 (bacteria) truncation values were: --p-trunc-len-f 260 --p-trunc-len-r 215 \
+#for chapter 2 (fungi) truncation values were:--p-trunc-len-f 250 --p-trunc-len-r 200 \
+#for chapter 3 (bacteria) truncation values were: --p-trunc-len-f 250 --p-trunc-len-r 200 \
+#for chapter 3 (fungi) truncation values were: --p-trunc-len-f 212 --p-trunc-len-r 180 \
+
+#visualize sequence length statistics      
+qiime feature-table tabulate-seqs \
+      --i-data rep-seqs.qza \
+      --o-visualization rep-seqs.qzv
+      
+#visualize assigned taxonomy
+#for 16S datasets the silva classifier (16S) was used in place of the unite classifier (ITS)
+qiime feature-classifier classify-sklearn \
+      --i-classifier unite-ver8-99-classifier-04.02.2020.qza \
+      --i-reads rep-seqs.qza \
+      --o-classification taxonomy.qza
+qiime metadata tabulate \
+      --m-input-file taxonomy.qza \
+      --o-visualization taxonomy.qzv
+qiime taxa barplot \
+      --i-table table.qza \
+      --i-taxonomy taxonomy.qza \
+      --m-metadata-file mapping.txt \
+      --o-visualization taxa-bar-plots.qzv
+
+#rarefy data
+qiime diversity alpha-rarefaction \
+      --i-table table.qza \
+      --i-phylogeny rooted-tree.qza \
+      --p-max-depth 6000 \
+      --m-metadata-file mapping.txt \
+      --o-visualization alpha-rarefaction.qzv
+#for chapter 1 (field, bacteria) rarefaction depth was 1000
+#for chapter 1 (field, fungi) rarefaction depth was: 6000
+#for chapter 1 (greenhouse, fungi) rarefaction depth was: 1000
+#for chapter 2 (bacteria) rarefaction depth was: 1000
+#for chapter 2 (fungi) rarefaction depth was: 6000
+#for chapter 3 (bacteria) rarefaction depth was: 1000
+#for chapter 3 (fungi) rarefaction depth was: 1000
+              
+#calculate core diversity metrics
+qiime diversity core-metrics-phylogenetic \
+      --i-phylogeny rooted-tree.qza \
+      --i-table table.qza \
+      --p-sampling-depth 6000 \
+      --m-metadata-file mapping.txt \
+      --output-dir core-metrics-results
+#for chapter 1 (field, bacteria) sampling depth was 1000
+#for chapter 1 (field, fungi) sampling depth was: 6000
+#for chapter 1 (greenhouse, fungi) sampling depth was: 1000
+#for chapter 2 (bacteria) sampling depth was: 1000
+#for chapter 2 (fungi) sampling depth was: 1000
+#for chapter 3 (bacteria) sampling depth was: 1000
+#for chapter 3 (fungi) sampling depth was: 1000
