@@ -1,6 +1,6 @@
 #####################################    Chapter 1 Code    ########################################
 
-#load in required packages
+#Load in required packages
 library(readr)
 library(dplyr)
 library(lmerTest)
@@ -41,7 +41,7 @@ ch1its$logobserved.features = log10(ch1itsfield$observed.features)
 ch1itsghobs <- ch1itsgh %>% mutate(log_features = log10(observed.features))
 ch116sfield.rich$logobserved.features = log10(ch116sfield.rich$observed.features)
 
-#model for Figure 2.1 
+#model for figure 2.1 
 me.mod2 <- lmer(shannon.entropy~leafnumber * lengthcm  + (1|timepoint.t) + (1|plantid), data=ch1its)
 summary(me.mod2)
 anova(me.mod2)
@@ -54,14 +54,14 @@ F_to_eta2(9.6998, 1, 69.997)
 #effect size of leaf length*leaf number
 F_to_eta2(8.7068, 2, 65.337)
 
-#model for Figure 2.2
+#model for figure 2.2
 me.mod3 <- lmer(shannon.entropy ~ leafnumber * length + (1|timepoint.t) + (1|plantid), data=ch116sfield.rich)
 summary(me.mod3)
 anova(me.mod3)
 (lsm = ls_means(me.mod3))
 ls_means(me.mod3, which = 'leafnumber', pairwise=TRUE)
 
-#model for Figure 2.3a
+#model for figure 2.3a
 set.seed(17)
 bray.its <-read_qza('bray_curtis_distance_matrix_f_ch1.qza')
 pcoaits.metadata <- read.csv("ch1-its-field-metadata-r.csv")
@@ -70,14 +70,14 @@ h <- how(plots = Plots(strata = pcoaits.metadata$plantid, type = "none"),
          nperm = 499)
 adonis2(b.matrix.its ~ leafnumber + timepoint.t, data = ch1its, permutations = h)
 
-#betadisper test for Model 2.3a
+#betadisper test for model 2.3a
 dis <- vegdist(b.matrix.its, method="bray")
 mod <- betadisper(dis, ch1its$leafnumber)
 anova(mod)
 plot(mod)
 boxplot(mod)
 
-#model for Figure 2.3b
+#model for figure 2.3b
 set.seed(17)
 bray.16s <-read_qza('bray_curtis_distance_matrix_b_ch1.qza')
 pcoa16s.metadata <- read.csv("metadata_nano_run_2.csv")
@@ -86,7 +86,7 @@ h <- how(plots = Plots(strata = pcoa16s.metadata$plantid, type = "none"),
          nperm = 499)
 adonis2(b.matrix.16s ~ leafnumber + timepoint.t, data = ch116s, permutations = h)
 
-#betadisper test for Model 2.3b
+#betadisper test for model 2.3b
 dis <- vegdist(b.matrix.16s, method="bray")
 mod <- betadisper(dis, ch116s$leafnumber)
 anova(mod)
@@ -110,33 +110,14 @@ anova(mod)
 plot(mod)
 boxplot(mod)
 
-#model for Figure 2.4
+#model for figure 2.4
 me.mod2 <- lmer(shannon.entropy ~ leaf.age + lengthcm + (1|block), data = ch1itsgh)
 summary(me.mod2) 
 anova(me.mod2)
 
-#model for Figure A2.1
-me.mod2 <- lmer(logobserved.features ~ leafnumber * lengthcm + (1|timepoint.t) + (1|plantid), data=ch1its)
-summary(me.mod2)
-anova(me.mod2)
-(lsm = ls_means(me.mod2))
-ls_means(me.mod2, which = 'leafnumber', pairwise=TRUE)
-
-#model for Figure A2.2
-me.mod2 <- lmer(logobserved.features ~ leafnumber + length + (1|timepoint.t) + (1|plantid), data=ch116s)
-summary(me.mod2)
-anova(me.mod2)
-(lsm = ls_means(me.mod2))
-ls_means(me.mod2, which = 'leafnumber', pairwise=TRUE)
-
-#model for Figure A2.3
-me.mod2 <- lmer(log_features ~ leaf.age + lengthcm + (1|block), data = ch1itsghobs)
-summary (me.mod2)
-anova(me.mod2)
-
 #RELATIVE ABUNDANCE OF FUNGAL GENERA (FIELD) 
 
-#read in data (fungi, genus)
+#R=read in data
 final.community.phy <- read.csv("ch1-its-genus-filtered.csv")
 
 #make tidy data frame
@@ -173,7 +154,7 @@ tidy.final20 <-tidy.final %>%
 wide.final20 <- tidy.final20 %>% 
   spread(Genus, abundance)
 
-#fit glm, fungi, genus
+#fit glm for figure 2.5
 species_list <- wide.final20 %>%
   dplyr::select(12:31) %>%
   select_if(colSums(.) != 0)
@@ -193,7 +174,7 @@ plot(mod0)
 anova(mod0)
 summary(mod0)
 
-#model for Figure 2.5 (fungi, genus level)
+#model for figure 2.5 (adjusted)
 mod.out <- anova(mod0,
                  bootID=permID,
                  p.uni = 'adjusted',
@@ -207,7 +188,7 @@ mod.out.posthoc <- anova(mod0,
 mod.out.posthoc
 sp.univariate <- (mod.out$uni.p) %>% as.data.frame()
 
-#model for Figure 2.5 - P-values for each genus
+#model for figure 2.5 - P-values for each genus (Adjusted)
 mod.out.posthoc$uni.test %>%
   as.data.frame %>%
   tibble::rownames_to_column("variable") %>%
@@ -221,7 +202,7 @@ mod.out.posthoc$uni.test %>%
 
 #RELATIVE ABUNDANCE OF BACTERIAL GENERA (FIELD)
 
-#read in data, bacteria, genus
+#read in data
 final.community.phy <- read.csv("ch1-16s-genus-filtered.csv")
 
 #make tidy dataframe
@@ -258,7 +239,7 @@ tidy.final20 <-tidy.final %>%
 wide.final20 <- tidy.final20 %>% 
   spread(Genus, abundance)
 
-#fit glm, bacteria, genus
+#fit glm for figure 2.5
 species_list <- wide.final20 %>%
   dplyr::select(11:30) %>%
   select_if(colSums(.) != 0)
@@ -279,7 +260,7 @@ anova(mod0)
 summary(mod0)
 set.seed(17)
 
-#model for Figure 2.5 (bacteria, genus level)
+#model for figure 2.5 (adjusted)
 mod.out <- anova(mod0,
                  bootID=permID,
                  p.uni = 'adjusted',
@@ -293,7 +274,7 @@ mod.out.posthoc <- anova(mod0,
 mod.out.posthoc
 sp.univariate <- (mod.out$uni.p) %>% as.data.frame()
 
-#model for Figure 2.5 - P-values for each genus
+#model for figure 2.5 - P-values for each genus (adjusted)
 mod.out.posthoc$uni.test %>%
   as.data.frame %>%
   tibble::rownames_to_column("variable") %>%
@@ -344,14 +325,14 @@ tidy.final20 <-tidy.final %>%
 wide.final20 <- tidy.final20 %>% 
   spread(Genus, abundance)
 
-#fit glm, fungi, genus, GREENHOUSE
+#Fit glm, for figure 2.6
 species_list <- wide.final20 %>%
   dplyr::select(9:28) %>%
   select_if(colSums(.) != 0)
 species.data <- mvabund(species_list)
 is.mvabund(species.data)
 
-#multivariate test looking at changes in community composition of microbial genera (not reported)
+#Multivariate test looking at changes in community composition of microbial genera (not reported)
 mod0 <- manyglm(species.data ~ as.factor(wide.final20$timepoint),
                 family = "negative.binomial")
 sppcoef <- coef(mod0)
@@ -361,7 +342,7 @@ anova(mod0)
 summary(mod0)
 set.seed(17)
 
-#model for Figure 2.6
+#model for figure 2.6 (adjusted)
 mod.out <- anova(mod0,
                  p.uni = 'adjusted',
                  test = 'LR')
@@ -373,7 +354,7 @@ mod.out.posthoc <- anova(mod0,
 mod.out.posthoc
 sp.univariate <- (mod.out$uni.p) %>% as.data.frame()
 
-#model for Figure 2.6 - P-values for each genus
+#model for figure 2.6 - P-values for each genus (adjusted)
 mod.out.posthoc$uni.test %>%
   as.data.frame %>%
   tibble::rownames_to_column("variable") %>%
@@ -384,3 +365,24 @@ mod.out.posthoc$uni.test %>%
       tibble::rownames_to_column("variable") %>%
       pivot_longer(-variable,names_to = "species", values_to = "pval")}) %>%
   dplyr::filter(!is.na(test))
+
+##Models for Supplementary Figures
+
+#model for figure A2.1
+me.mod2 <- lmer(logobserved.features ~ leafnumber * lengthcm + (1|timepoint.t) + (1|plantid), data=ch1its)
+summary(me.mod2)
+anova(me.mod2)
+(lsm = ls_means(me.mod2))
+ls_means(me.mod2, which = 'leafnumber', pairwise=TRUE)
+
+#model for figure A2.2
+me.mod2 <- lmer(logobserved.features ~ leafnumber + length + (1|timepoint.t) + (1|plantid), data=ch116s)
+summary(me.mod2)
+anova(me.mod2)
+(lsm = ls_means(me.mod2))
+ls_means(me.mod2, which = 'leafnumber', pairwise=TRUE)
+
+#model for figure A2.3
+me.mod2 <- lmer(log_features ~ leaf.age + lengthcm + (1|block), data = ch1itsghobs)
+summary (me.mod2)
+anova(me.mod2)
