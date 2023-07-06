@@ -1,0 +1,311 @@
+#####################################    Chapter 2 Code    ########################################
+
+#load in required packages
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(emmeans)
+library(qiime2R)
+library(vegan)
+library(permute)
+library(gg3D)
+library(pwr)
+library(mvabund)
+
+#read in data
+ch216s <- read_csv("ch2-16s-metadata.csv")
+ch2itsnorhiznocoll <- read_csv ("ch2-its-metadata-no-rhiz-or-coll.csv")
+
+#re-code inoculation 
+#mock_na = mock infection
+#mock_yes = mock co-infection
+#infection_yes = inoculation, received co-inoculation (coll + rhiz)
+#infection_no = inoculation, rhiz only
+ch216s <- ch216s %>% mutate(inoculation = paste(treatment, coinfection, sep = "_"))
+ch2itsnorhiznocoll <- ch2itsnorhiznocoll %>% mutate(inoculation = paste(treatment, coinfection, sep = "_"))
+
+#log transform richness
+ch216s$logobserved.features =log10(ch216s$observed.features)
+ch2itsnorhiznocoll$logobserved.features =log10(ch2itsnorhiznocoll$observed.features)
+
+#model for Figure 3.1 (bacteria)
+mod1 <- lm(shannon.entropy ~ hormone + inoculation, ch216s)
+summary(mod1)
+anova(mod1)
+
+#power analysis for bacterial diversity by hormone treatment 
+pwr.f2.test(u=1, v=52, f2=NULL, sig.level = 0.05, power=0.8)
+
+#model for Figure 3.1 (fungi)
+mod1 <- lm(shannon.entropy ~ hormone + inoculation, ch2itsnorhiznocoll)
+summary(mod1)
+anova(mod1)
+
+#model for Figure 3.2 (bacteria)
+set.seed(17)
+bray.16s <-read_qza('bray_curtis_distance_matrix_ch2_b.qza')
+pcoa16s.metadata <- read.csv("ch2-16s-metadata.csv")
+pcoa16s.metadata <- pcoa16s.metadata%>% mutate(inoculation = paste(treatment, coinfection, sep = "_"))
+b.matrix.16s <-bray.16s$data
+adonis2(b.matrix.16s ~ hormone + inoculation, data = pcoa16s.metadata, permutations = 999)
+#betadisper, bacteria
+dis <- vegdist(b.matrix.16s, method="bray")
+mod <- betadisper(dis, ch216s$hormone)
+anova(mod)
+plot(mod)
+boxplot(mod)
+
+#model for Figure 3.2 (fungi)
+set.seed(17)
+bray.its <-read_qza('bray_curtis_distance_matrix_f_ch2.qza')
+pcoaits.metadata <- read.csv("ch2-its-metadata-no-rhiz-or-coll.csv")
+pcoaits.metadata <- pcoaits.metadata %>% mutate(inoculation = paste(treatment, coinfection, sep = "_"))
+b.matrix.its <-bray.its$data
+adonis2(b.matrix.its ~ hormone + inoculation, data = pcoaits.metadata, permutations = 999)
+#betadisper
+dis <- vegdist(b.matrix.its, method="bray")
+mod <- betadisper(dis, ch2itsnorhiznocoll$hormone)
+anova(mod)
+plot(mod)
+boxplot(mod)
+
+#RELATIVE ABUNDANCE OF BACTERIAL GENERA
+
+#make tidy df which is easier for formatting
+final.community.phy <- read.csv("ch2-16s-genus-filtered.csv")
+tidy.final <-final.community.phy %>%
+  gather(Genus, abundance, 13:114) %>% 
+  group_by(Genus) %>% 
+  mutate(total= sum(abundance)) %>% 
+  ungroup()
+
+#gives list of total abundance across all samples for each genus
+list.abundance <-final.community.phy %>%
+  gather(Genus, abundance, 13:114) %>% 
+  group_by(Genus) %>% 
+  summarise(total= sum(abundance)) %>% 
+  arrange(desc(total)) 
+
+#gets list of 20 most abundant genus 
+list20.abundance <-final.community.phy %>%
+  gather(Genus, abundance, 13:114) %>% 
+  group_by(Genus) %>% 
+  summarise(total= sum(abundance)) %>% 
+  arrange(desc(total)) %>% 
+  slice_max(total, n = 20)
+
+#make a vector the top 20 genus to be selected
+genustop20 <-c(unique(list20.abundance$Genus))
+
+#subset data for the top 20 most abundant taxa
+tidy.final20 <-tidy.final %>% 
+  filter(Genus %in% genustop20) %>% 
+  select(-c(total))
+
+#new community matrix with the 20 most abundant genera only 
+wide.final20 <- tidy.final20 %>% 
+  spread(Genus, abundance)
+
+#fit glm for figure figure 3.3b
+species_list <- wide.final20 %>%
+  dplyr::select(13:32) %>%
+  select_if(colSums(.) != 0)
+species.data <- mvabund(species_list)
+is.mvabund(species.data)
+
+#multivariate test looking at changes in community composition of microbial genera (not reported)
+mod0 <- manyglm(species.data ~ as.factor(wide.final20$hormone),
+                family = "negative.binomial")
+anova(mod0)
+summary(mod0)
+set.seed(17)
+
+#model for figure 3.3b (adjusted)
+mod.out <- anova(mod0,
+                 p.uni = 'adjusted',
+                 test = 'LR')
+mod.out
+
+#model for figure 3.3b - P-values for each genus(adjusted)
+library(tidyr)
+mod.out$uni.test %>%
+  as.data.frame %>%
+  tibble::rownames_to_column("variable") %>%
+  pivot_longer(-variable,names_to = "species", values_to = "test") %>%
+  inner_join({
+    mod.out$uni.p %>%
+      as.data.frame %>%
+      tibble::rownames_to_column("variable") %>%
+      pivot_longer(-variable,names_to = "species", values_to = "pval")}) %>%
+  dplyr::filter(!is.na(test))
+
+#re-code inoculation 
+#mock_na = mock infection
+#mock_yes = mock co-infection
+#infection_yes = inoculation, received co-inoculation (coll + rhiz)
+#infection_no = inoculation, rhiz only
+wide.final20 <- wide.final20 %>% mutate(inoculation = paste(treatment, coinfection, sep = "_"))
+
+#fit glm for figure 3.6b 
+species_list <- wide.final20 %>%
+  dplyr::select(13:32) %>%
+  select_if(colSums(.) != 0)
+species.data <- mvabund(species_list)
+is.mvabund(species.data)
+
+#multivariate test looking at changes in community composition of microbial genera (not reported)
+mod0 <- manyglm(species.data ~ as.factor(wide.final20$inoculation),
+                family = "negative.binomial")
+anova(mod0)
+summary(mod0)
+set.seed(17)
+
+#model for figure 3.6b (adjusted)
+mod.out <- anova(mod0,
+                 p.uni = 'adjusted',
+                 test = 'LR')
+mod.out
+mod.out.posthoc <- anova(mod0,
+                         pairwise.comp = as.factor(wide.final20$inoculation),
+                         p.uni = 'adjusted',
+                         test = 'LR')
+mod.out.posthoc
+sp.univariate <- (mod.out$uni.p) %>% as.data.frame()
+
+#model for figure 3.6b - P-values for each genus (adjusted)
+mod.out.posthoc$uni.test %>%
+  as.data.frame %>%
+  tibble::rownames_to_column("variable") %>%
+  pivot_longer(-variable,names_to = "species", values_to = "test") %>%
+  inner_join({
+    mod.out.posthoc$uni.p %>%
+      as.data.frame %>%
+      tibble::rownames_to_column("variable") %>%
+      pivot_longer(-variable,names_to = "species", values_to = "pval")}) %>%
+  dplyr::filter(!is.na(test))
+
+#RELATIVE ABUNDANCE OF FUNGAL GENERA
+
+#make tidy data frame
+tidy.final <-final.community.phy %>%
+  gather(Genus, abundance, 13:102) %>% 
+  group_by(Genus) %>% 
+  mutate(total= sum(abundance)) %>% 
+  ungroup()
+
+#gives list of total abundance across all samples for each genus
+list.abundance <-final.community.phy %>%
+  gather(Genus, abundance, 13:102) %>% 
+  group_by(Genus) %>% 
+  summarise(total= sum(abundance)) %>% 
+  arrange(desc(total)) 
+
+#gets list of 20 most abundant genus 
+list20.abundance <-final.community.phy %>%
+  gather(Genus, abundance, 13:102) %>% 
+  group_by(Genus) %>% 
+  summarise(total= sum(abundance)) %>% 
+  arrange(desc(total)) %>% 
+  slice_max(total, n = 20)
+
+#make a vector the top 20 genera to be selected
+genustop20 <-c(unique(list20.abundance$Genus))
+
+#subset data for the top 20 most abundant taxa
+tidy.final20 <-tidy.final %>% 
+  filter(Genus %in% genustop20) %>% 
+  select(-c(total))
+
+#new community matrix with the 20 most abundant genera only 
+wide.final20 <- tidy.final20 %>% 
+  spread(Genus, abundance)
+
+#fit glm for figure 3.3a
+species_list <- wide.final20 %>%
+  dplyr::select(13:32) %>%
+  select_if(colSums(.) != 0)
+species.data <- mvabund(species_list)
+is.mvabund(species.data)
+
+#multivariate test looking at changes in community composition of microbial genera (not reported)
+mod0 <- manyglm(species.data ~ as.factor(wide.final20$hormone),
+                family = "negative.binomial")
+anova(mod0)
+summary(mod0)
+set.seed(17)
+
+#model for figure 3.3a (adjusted)
+mod.out <- anova(mod0,
+                 p.uni = 'adjusted',
+                 test = 'LR')
+mod.out
+
+#model for figure 3.3a - P-values for each genus (adjusted)
+mod.out$uni.test %>%
+  as.data.frame %>%
+  tibble::rownames_to_column("variable") %>%
+  pivot_longer(-variable,names_to = "species", values_to = "test") %>%
+  inner_join({
+    mod.out$uni.p %>%
+      as.data.frame %>%
+      tibble::rownames_to_column("variable") %>%
+      pivot_longer(-variable,names_to = "species", values_to = "pval")}) %>%
+  dplyr::filter(!is.na(test))
+
+#re-code inoculation 
+#mock_na = mock infection
+#mock_yes = mock co-infection
+#infection_yes = inoculation, received co-inoculation (coll + rhiz)
+#infection_no = inoculation, rhiz only
+wide.final20 <- wide.final20 %>% mutate(inoculation = paste(treatment, coinfection, sep = "_"))
+
+#fit glm for figure 3.6a
+species_list <- wide.final20 %>%
+  dplyr::select(13:32) %>%
+  select_if(colSums(.) != 0)
+species.data <- mvabund(species_list)
+is.mvabund(species.data)
+
+#multivariate test looking at changes in community composition of microbial genera (not reported)
+mod0 <- manyglm(species.data ~ as.factor(wide.final20$inoculation),
+                family = "negative.binomial")
+anova(mod0)
+summary(mod0)
+set.seed(17)
+
+#model for figure 3.6a (adjusted)
+mod.out <- anova(mod0,
+                 p.uni = 'adjusted',
+                 test = 'LR')
+mod.out
+mod.out.posthoc <- anova(mod0,
+                         pairwise.comp = as.factor(wide.final20$inoculation),
+                         p.uni = 'adjusted',
+                         test = 'LR')
+mod.out.posthoc
+sp.univariate <- (mod.out$uni.p) %>% as.data.frame()
+
+#model for figure 3.6a - P-values for each genus (adjusted)
+mod.out.posthoc$uni.test %>%
+  as.data.frame %>%
+  tibble::rownames_to_column("variable") %>%
+  pivot_longer(-variable,names_to = "species", values_to = "test") %>%
+  inner_join({
+    mod.out.posthoc$uni.p %>%
+      as.data.frame %>%
+      tibble::rownames_to_column("variable") %>%
+      pivot_longer(-variable,names_to = "species", values_to = "pval")}) %>%
+  dplyr::filter(!is.na(test))
+
+###Models for Supplementary Figures
+
+#supplementary model for figure A3.1 
+mod1 <- lm(logobserved.features ~ hormone + inoculation, ch216s)
+summary(mod1)
+anova(mod1)
+
+#supplementary model for figure A3.1
+mod1 <- lm(logobserved.features ~ hormone + inoculation, ch2itsnorhiznocoll)
+summary(mod1)
+anova(mod1)
