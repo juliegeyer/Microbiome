@@ -1,6 +1,6 @@
 #####################################    Chapter 1 Code    ########################################
 
-#Load in required packages
+#load in required packages
 library(readr)
 library(dplyr)
 library(lmerTest)
