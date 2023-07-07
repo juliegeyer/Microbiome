@@ -1,0 +1,306 @@
+#####################################    Chapter 3 Code    ########################################
+
+#load in required packages
+library(readr)
+library(dplyr)
+library(lmerTest)
+library(ggplot2)
+library(vegan)
+library(permute)
+library(qiime2R)
+library(effectsize)
+library(mvabund)
+library(tidyr)
+
+#read in data
+ch316s <- read_csv("ch3-16s-metadata-rm-none.csv")
+ch3its <- read_csv("ch3-its-metadata-rm-none_norhizorcoll.csv")
+
+#change variables to factors or numeric
+ch316s$timepoint <- as.factor(ch316s$timepoint)
+ch316s$treatment <- as.factor(ch316s$treatment)
+ch316s$growth.chamber <- as.factor(ch316s$growth.chamber)
+ch316s$leaf.length <- as.numeric(ch316s$leaf.length)
+ch316s$rhiz.severity <- as.numeric(ch316s$rhiz.severity)
+ch3its$timepoint <- as.factor(ch3its$timepoint)
+ch3its$treatment <- as.factor(ch3its$treatment)
+ch3its$growth.chamber <- as.factor(ch3its$growth.chamber)
+ch3its$leaf.length <- as.numeric(ch3its$leaf.length)
+ch3its$rhiz.severity <- as.numeric(ch3its$rhiz.severity)
+ch316s$symptoms <- as.factor(ch316s$symptoms)
+ch3its$symptoms <- as.factor(ch3its$symptoms)
+
+#log transform richness
+ch316s$logobserved.features =log10(ch316s$observed.features)
+ch3its$logobserved.features =log10(ch3its$observed.features)
+
+#model for figure 4.1a & A4.1a
+mod1 <- lm(shannon.entropy ~ treatment * timepoint, ch3its)
+summary(mod1)
+anova(mod1)
+
+#model for figure 4.1b & A4.1b
+mod1 <- lm(shannon.entropy ~  treatment * timepoint, ch316s)
+summary(mod1)
+anova(mod1)
+
+#model for figure 4.2a
+mod1 <- lm(shannon.entropy ~ treatment_symp * timepoint, ch3its)
+summary(mod1)
+anova(mod1)
+
+#model for figure 4.2b
+mod1 <- lm(shannon.entropy ~ treatment_symp * timepoint, ch316s)
+summary(mod1)
+anova(mod1)
+
+#RELATIVE ABUNDANCE OF FUNGAL GENERA
+
+#read in data
+final.community.phy <- read.csv("ch3-its-genus-filtered.csv")
+
+#make tidy df which is easier for formatting
+tidy.final <-final.community.phy %>%
+  gather(Genus, abundance, 12:97) %>% 
+  group_by(Genus) %>% 
+  mutate(total= sum(abundance)) %>% 
+  ungroup()
+
+#gives list of total abundance across all samples for each genus
+list.abundance <-final.community.phy %>%
+  gather(Genus, abundance, 12:97) %>% 
+  group_by(Genus) %>% 
+  summarise(total= sum(abundance)) %>% 
+  arrange(desc(total)) 
+
+#gets list of 20 most abundant genus 
+list20.abundance <-final.community.phy %>%
+  gather(Genus, abundance, 12:97) %>% 
+  group_by(Genus) %>% 
+  summarise(total= sum(abundance)) %>% 
+  arrange(desc(total)) %>% 
+  slice_max(total, n = 20)
+
+#make a vector the top 20 genus to be selected
+genustop20 <-c(unique(list20.abundance$Genus))
+
+#subset data for the top 20 fungal genera
+tidy.final20 <-tidy.final %>% 
+  filter(Genus %in% genustop20) %>% 
+  select(-c(total))
+
+#new community matrix with the 20 most abundant genera only 
+wide.final20 <- tidy.final20 %>% 
+  spread(Genus, abundance)
+
+#fit glm for figures 4.4a & A4.4a
+species_list <- wide.final20 %>%
+  dplyr::select(10:29) %>%
+  select_if(colSums(.) != 0)
+species.data <- mvabund(species_list)
+is.mvabund(species.data)
+
+#multivariate test looking at changes in community composition of microbial genera (not reported)
+mod0 <- manyglm(species.data ~ as.factor(wide.final20$treatment),
+                family = "negative.binomial")
+anova(mod0)
+summary(mod0)
+set.seed(17)
+
+#model for figure 4.4a (adjusted)
+mod.out <- anova(mod0,
+                 p.uni = 'adjusted',
+                 test = 'LR')
+mod.out
+
+
+#model for figure 4.4a - P-values for each genus (adjusted)
+library(tidyr)
+mod.out$uni.test %>%
+  as.data.frame %>%
+  tibble::rownames_to_column("variable") %>%
+  pivot_longer(-variable,names_to = "species", values_to = "test") %>%
+  inner_join({
+    mod.out$uni.p %>%
+      as.data.frame %>%
+      tibble::rownames_to_column("variable") %>%
+      pivot_longer(-variable,names_to = "species", values_to = "pval")}) %>%
+  dplyr::filter(!is.na(test))
+
+#multivariate test looking at changes in community composition of microbial genera (not reported) --> symptomatic inoculation
+mod0 <- manyglm(species.data ~ as.factor(wide.final20$treatment_symp),
+                family = "negative.binomial")
+anova(mod0)
+summary(mod0)
+set.seed(17)
+
+#model for figure A4.4a (adjusted)
+mod.out <- anova(mod0,
+                 p.uni = 'adjusted',
+                 test = 'LR')
+mod.out
+
+#model for figure A4.4a - P-values for each genus (adjusted)
+library(tidyr)
+mod.out$uni.test %>%
+  as.data.frame %>%
+  tibble::rownames_to_column("variable") %>%
+  pivot_longer(-variable,names_to = "species", values_to = "test") %>%
+  inner_join({
+    mod.out$uni.p %>%
+      as.data.frame %>%
+      tibble::rownames_to_column("variable") %>%
+      pivot_longer(-variable,names_to = "species", values_to = "pval")}) %>%
+  dplyr::filter(!is.na(test))
+
+#RELATIVE ABUNDANCE OF BACTERIAL GENERA
+
+#read in data
+final.community.phy <- read.csv("ch3-16s-genus-filtered.csv")
+
+#make tidy df which is easier for formatting
+tidy.final <-final.community.phy %>%
+  gather(Genus, abundance, 12:130) %>% 
+  group_by(Genus) %>% 
+  mutate(total= sum(abundance)) %>% 
+  ungroup()
+
+#gives list of total abundance across all samples for each genus
+list.abundance <-final.community.phy %>%
+  gather(Genus, abundance, 12:130) %>% 
+  group_by(Genus) %>% 
+  summarise(total= sum(abundance)) %>% 
+  arrange(desc(total)) 
+
+#gets list of 20 most abundant genus 
+list20.abundance <-final.community.phy %>%
+  gather(Genus, abundance, 12:130) %>% 
+  group_by(Genus) %>% 
+  summarise(total= sum(abundance)) %>% 
+  arrange(desc(total)) %>% 
+  slice_max(total, n = 20)
+
+#make a vector the top 20 genus to be selected
+genustop20 <-c(unique(list20.abundance$Genus))
+
+#subset data for the top 20 most abundant taxa
+tidy.final20 <-tidy.final %>% 
+  filter(Genus %in% genustop20) %>% 
+  select(-c(total))
+
+#new community matrix with the 20 most abundant genera only 
+wide.final20 <- tidy.final20 %>% 
+  spread(Genus, abundance)
+
+#fit glm for figure 4.4b & A4.4b
+species_list <- wide.final20 %>%
+  dplyr::select(10:29) %>%
+  select_if(colSums(.) != 0)
+species.data <- mvabund(species_list)
+is.mvabund(species.data)
+
+#multivariate test looking at changes in community composition of microbial genera (not reported)
+mod0 <- manyglm(species.data ~ as.factor(wide.final20$treatment),
+                family = "negative.binomial")
+anova(mod0)
+summary(mod0)
+set.seed(17)
+
+#model for figure 4.4b (adjusted)
+mod.out <- anova(mod0,
+                 p.uni = 'adjusted',
+                 test = 'LR')
+mod.out
+mod.out.posthoc <- anova(mod0,
+                         p.uni = 'adjusted',
+                         test = 'LR')
+
+#model for figure 4.4b - P-values for each genus (adjusted)
+library(tidyr)
+mod.out.posthoc$uni.test %>%
+  as.data.frame %>%
+  tibble::rownames_to_column("variable") %>%
+  pivot_longer(-variable,names_to = "species", values_to = "test") %>%
+  inner_join({
+    mod.out$uni.p %>%
+      as.data.frame %>%
+      tibble::rownames_to_column("variable") %>%
+      pivot_longer(-variable,names_to = "species", values_to = "pval")}) %>%
+  dplyr::filter(!is.na(test))
+
+#multivariate test looking at changes in community composition of microbial genera (not reported) --> symptomatic inoculation
+mod0 <- manyglm(species.data ~ as.factor(wide.final20$treatment),
+                family = "negative.binomial")
+anova(mod0)
+summary(mod0)
+set.seed(17)
+
+#model for figure A4.4b (adjusted)
+mod.out <- anova(mod0,
+                 p.uni = 'adjusted',
+                 test = 'LR')
+mod.out
+mod.out.posthoc <- anova(mod0,
+                         p.uni = 'adjusted',
+                         test = 'LR')
+
+#model for figure A4.4b - P-values for each genus (adjusted)
+library(tidyr)
+mod.out.posthoc$uni.test %>%
+  as.data.frame %>%
+  tibble::rownames_to_column("variable") %>%
+  pivot_longer(-variable,names_to = "species", values_to = "test") %>%
+  inner_join({
+    mod.out$uni.p %>%
+      as.data.frame %>%
+      tibble::rownames_to_column("variable") %>%
+      pivot_longer(-variable,names_to = "species", values_to = "pval")}) %>%
+  dplyr::filter(!is.na(test))
+
+##Models for Supplementary Figures
+
+#model for figure A4.1c 
+mod1 <- lm(logobserved.features ~  treatment * timepoint, ch3its)
+summary(mod1)
+anova(mod1)
+
+#model for figure A4.1d  
+mod1 <- lm(logobserved.features ~  treatment * timepoint, ch316s)
+summary(mod1)
+anova(mod1)
+
+#model for figure A4.2a
+mod1 <- lm(logobserved.features ~ treatment_symp * timepoint, ch3its)
+summary(mod1)
+anova(mod1)
+
+#model for figure A4.2b
+mod1 <- lm(logobserved.features ~ treatment_symp * timepoint, ch316s)
+summary(mod1)
+anova(mod1)
+
+#model for figure A4.3a
+set.seed(17)
+bray.its <-read_qza('bray_curtis_distance_matrix_ch3_norhizorcoll.qza')
+pcoaits.metadata <- read.csv("ch3-its-metadata-bray.csv")
+b.matrix.its <-bray.its$data
+adonis2(b.matrix.its ~ treatment_symp * timepoint , data = pcoaits.metadata, permutations = 999)
+#betadisper
+dis <- vegdist(b.matrix.its, method="bray")
+mod <- betadisper(dis, ch3its$treatment_symp)
+anova(mod)
+plot(mod)
+boxplot(mod)
+
+#model for figure A4.3b
+set.seed(17)
+bray.16s <-read_qza('bray_curtis_distance_matrix_b_ch3.qza')
+pcoa16s.metadata <- read.csv("ch3-16s-metadata-rm-none.csv")
+b.matrix.16s <-bray.16s$data
+adonis2(b.matrix.16s ~ treatment_symp * timepoint, data = pcoa16s.metadata, permutations = 999)
+#betadisper
+dis <- vegdist(b.matrix.16s, method="bray")
+mod <- betadisper(dis, ch316s$treatment_symp)
+anova(mod)
+plot(mod)
+boxplot(mod)
