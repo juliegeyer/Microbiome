@@ -325,14 +325,14 @@ tidy.final20 <-tidy.final %>%
 wide.final20 <- tidy.final20 %>% 
   spread(Genus, abundance)
 
-#Fit glm, for figure 2.6
+#fit glm, for figure 2.6
 species_list <- wide.final20 %>%
   dplyr::select(9:28) %>%
   select_if(colSums(.) != 0)
 species.data <- mvabund(species_list)
 is.mvabund(species.data)
 
-#Multivariate test looking at changes in community composition of microbial genera (not reported)
+#multivariate test looking at changes in community composition of microbial genera (not reported)
 mod0 <- manyglm(species.data ~ as.factor(wide.final20$timepoint),
                 family = "negative.binomial")
 sppcoef <- coef(mod0)
