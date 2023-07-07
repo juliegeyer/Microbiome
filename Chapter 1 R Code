@@ -117,7 +117,7 @@ anova(me.mod2)
 
 #RELATIVE ABUNDANCE OF FUNGAL GENERA (FIELD) 
 
-#R=read in data
+#read in data
 final.community.phy <- read.csv("ch1-its-genus-filtered.csv")
 
 #make tidy data frame
