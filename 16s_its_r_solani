@@ -1,0 +1,306 @@
+# 1. Load Packages -------------------------------------------------------------
+library(tidyverse) 
+library(lmerTest)
+library(vegan)
+library(permute)
+library(qiime2R)
+library(effectsize)
+library(mvabund)
+library(patchwork)
+library(lme4)
+library(car)
+library(emmeans)
+library(ggpattern)
+library(ggplot2)
+
+# Custom functions -------------------------------------------------------------
+extract_mvabund_pvals <- function(anova_output) {
+  tests <- anova_output$uni.test %>%
+    as.data.frame() %>%
+    tibble::rownames_to_column("variable") %>%
+    pivot_longer(-variable, names_to = "species", values_to = "test")
+  
+  pvals <- anova_output$uni.p %>%
+    as.data.frame() %>%
+    tibble::rownames_to_column("variable") %>%
+    pivot_longer(-variable, names_to = "species", values_to = "pval")
+  
+  inner_join(tests, pvals, by = c("variable", "species")) %>%
+    dplyr::filter(!is.na(test))
+}
+
+# Read in data -----------------------------------------------------------------
+# metadata
+ch316s              <- read_csv("ch3-16s-metadata-rm-none.csv")
+ch3its              <- read_csv("ch3-its-metadata-rm-none_norhizorcoll.csv")
+ch3its_full         <- read.csv("ch3-its-metadata-r.csv")
+# relative abundance unfiltered data
+final.community.phy <- read.csv("ch3-its-genus-filtered.csv")
+final.community.bac <- read.csv("ch3-16s-genus-filtered.csv") 
+# distance matrices
+b.matrix.csv.16s <- read_csv('distance-matrix_16s_ch3.csv') %>%
+  column_to_rownames(var = '...1') %>%
+  as.matrix()
+b.matrix.csv.its <- read_csv('distance-matrix_its_ch3.csv') %>%
+  column_to_rownames(var = '...1') %>%
+  as.matrix()
+
+# Clean data -------------------------------------------------------------------
+# Convert variables to factors/numerical and log transform richness efficiently
+ch316s <- ch316s %>%
+  mutate(
+    across(c(timepoint, treatment, growth.chamber, symptoms), as.factor),
+    across(c(leaf.length, rhiz.severity), as.numeric),
+    logobserved.features = log10(observed.features)
+  )
+ch3its <- ch3its %>%
+  mutate(
+    across(c(timepoint, treatment, growth.chamber, symptoms), as.factor),
+    across(c(leaf.length, rhiz.severity), as.numeric),
+    logobserved.features = log10(observed.features)
+  )
+
+# Clean and reformat data for relative abundance models ------------------------
+# FUNGI: Extract top 20 genus list and filter
+genustop20 <- final.community.phy %>%
+  pivot_longer(cols = 12:97, names_to = "Genus", values_to = "abundance") %>% 
+  group_by(Genus) %>% 
+  summarise(total = sum(abundance)) %>% 
+  slice_max(total, n = 20) %>%
+  pull(Genus)
+wide.final20 <- final.community.phy %>%
+  pivot_longer(cols = 12:97, names_to = "Genus", values_to = "abundance") %>% 
+  filter(Genus %in% genustop20) %>% 
+  pivot_wider(names_from = Genus, values_from = abundance)
+
+# BACTERIA: Extract top 20 genus list and filter
+top_20_bac_taxa <- final.community.bac %>%
+  pivot_longer(cols = 12:97, names_to = "Genus", values_to = "abundance") %>% 
+  group_by(Genus) %>% 
+  summarise(total = sum(abundance)) %>% 
+  slice_max(total, n = 20) %>%
+  pull(Genus)
+wide_bac_top20 <- final.community.bac %>%
+  pivot_longer(cols = 12:97, names_to = "Genus", values_to = "abundance") %>% 
+  filter(Genus %in% top_20_bac_taxa) %>% 
+  pivot_wider(names_from = Genus, values_from = abundance)
+
+################################################################################
+#                             Models
+################################################################################
+
+# Diversity, richness, and timepoint linear models --------------------------
+# bacteria
+summary(lm(shannon.entropy ~ treatment * timepoint, ch316s))
+anova(lm(shannon.entropy ~ treatment * timepoint, ch316s))
+summary(lm(shannon.entropy ~ treatment_symp * timepoint, ch316s))
+anova(lm(shannon.entropy ~ treatment_symp * timepoint, ch316s))
+anova(lm(logobserved.features ~ treatment * timepoint, ch316s))
+anova(lm(logobserved.features ~ treatment_symp * timepoint, ch316s))
+
+# fungi
+summary(lm(shannon.entropy ~ treatment * timepoint, ch3its))
+anova(lm(shannon.entropy ~ treatment * timepoint, ch3its))
+summary(lm(shannon.entropy ~ treatment_symp * timepoint, ch3its))
+anova(lm(shannon.entropy ~ treatment_symp * timepoint, ch3its))
+my_model <- lm(shannon.entropy ~ treatment_symp * timepoint, data = ch3its)
+emm_time_by_treat <- emmeans(my_model, ~ timepoint | treatment_symp)
+pairs(emm_time_by_treat, adjust = "tukey")
+anova(lm(logobserved.features ~ treatment * timepoint, ch3its))
+anova(lm(logobserved.features ~ treatment_symp * timepoint, ch3its))
+
+#Community composition models  -------------------------------------------------
+
+# bacteria
+# filter and align 16S metadata
+meta.16s.aligned <- ch316s[ch316s$sampleid %in% rownames(b.matrix.csv.16s), ]
+meta.16s.aligned <- meta.16s.aligned[match(rownames(b.matrix.csv.16s), meta.16s.aligned$sampleid), ]
+
+# checkpoints
+stopifnot(!any(is.na(meta.16s.aligned$sampleid)))
+stopifnot(nrow(meta.16s.aligned) == nrow(b.matrix.csv.16s))
+stopifnot(all(meta.16s.aligned$sampleid == rownames(b.matrix.csv.16s)))
+
+# fix factors & drop unused levels
+meta.16s.aligned <- meta.16s.aligned %>%
+  mutate(across(c(treatment, treatment_symp, timepoint), factor)) %>%
+  droplevels()
+
+# PERMANOVAS 
+set.seed(17)
+adonis2(b.matrix.csv.16s ~ treatment * timepoint, data = meta.16s.aligned, permutations = 999)
+set.seed(17)
+adonis2(b.matrix.csv.16s ~ treatment_symp * timepoint, data = meta.16s.aligned, permutations = 999)
+
+# fungi
+# clean
+ch3its$sampleid <- sub("-.*", "", ch3its$sampleid)
+rownames(b.matrix.csv.its) <- sub("-.*", "", rownames(b.matrix.csv.its))
+colnames(b.matrix.csv.its) <- rownames(b.matrix.csv.its)
+common_its_samples <- intersect(rownames(b.matrix.csv.its), ch3its$sampleid)
+b.matrix.csv.its <- b.matrix.csv.its[common_its_samples, common_its_samples]
+
+# filter and align ITS metadata
+meta.its.aligned <- ch3its[ch3its$sampleid %in% rownames(b.matrix.csv.its), ]
+meta.its.aligned <- meta.its.aligned[match(rownames(b.matrix.csv.its), meta.its.aligned$sampleid), ]
+
+# checkpoints
+stopifnot(!any(is.na(meta.its.aligned$sampleid)))
+stopifnot(nrow(meta.its.aligned) == nrow(b.matrix.csv.its))
+stopifnot(all(meta.its.aligned$sampleid == rownames(b.matrix.csv.its)))
+
+# fix factors
+meta.its.aligned <- meta.its.aligned %>%
+  mutate(across(c(treatment, treatment_symp, timepoint), factor)) %>%
+  droplevels()
+
+# PERMANOVAS
+set.seed(17)
+adonis2(b.matrix.csv.its ~ treatment * timepoint, data = meta.its.aligned, permutations = 999)
+set.seed(17)
+adonis2(b.matrix.csv.its ~ treatment_symp * timepoint, data = meta.its.aligned, permutations = 999)
+
+
+# Procrustes ----------------------------------------------------------------
+# clean
+proc.16s.raw <- b.matrix.csv.16s
+proc.its.raw <- b.matrix.csv.its
+rownames(proc.16s.raw) <- gsub("^16S", "", rownames(proc.16s.raw))
+colnames(proc.16s.raw) <- gsub("^16S", "", colnames(proc.16s.raw))
+rownames(proc.its.raw) <- gsub("^ITS", "", rownames(proc.its.raw))
+colnames(proc.its.raw) <- gsub("^ITS", "", colnames(proc.its.raw))
+
+common_samples_proc <- intersect(rownames(proc.16s.raw), rownames(proc.its.raw))
+proc.16s <- proc.16s.raw[common_samples_proc, common_samples_proc]
+proc.its <- proc.its.raw[common_samples_proc, common_samples_proc]
+
+# procrustes
+bacteria.pcoa <- wcmdscale(proc.16s, eig = TRUE, add = "lingoes")
+fungi.pcoa <- wcmdscale(proc.its, eig = TRUE, add = "lingoes")
+
+# fit
+concor <- procrustes(bacteria.pcoa, fungi.pcoa, scale = TRUE, symmetric = FALSE, choices=c(1,2))
+summary(concor)
+
+# visualization checks
+par(mfrow=c(1,2))
+plot(concor, kind = 1, main="Procrustes Errors")
+plot(concor, kind = 2, main="Procrustes Fit")
+par(mfrow=c(1,1))
+
+# statistical significance
+set.seed(17)
+penvi.test <- protest(bacteria.pcoa, fungi.pcoa, scores = "sites", permutations = 999, choices=c(1,2))
+penvi.test
+
+
+# Betadisper ----------------------------------------------------------------
+# data
+dis.16s <- as.dist(b.matrix.csv.16s)
+mod.16s <- betadisper(dis.16s, meta.16s.aligned$treatment)
+
+# model
+anova(mod.16s)
+set.seed(17)
+pairwise_results <- permutest(mod.16s, pairwise = TRUE, permutations = 999)
+pairwise_results
+
+# betadisper plots
+plot(mod.16s)
+boxplot(mod.16s, main="Distance to Centroid")
+
+
+# Fungal relative abundance model ------------------------------------------
+species_list <- wide.final20 %>%
+  dplyr::select(10:29) %>%
+  select_if(colSums(.) != 0)
+species.data <- mvabund(species_list)
+
+# treatment, relative abundance
+set.seed(17)
+mod0 <- manyglm(species.data ~ as.factor(wide.final20$treatment), family = "negative.binomial")
+mod.out0 <- anova(mod0, p.uni = 'adjusted', test = 'LR')
+print(mod.out0)
+pvals_treatment <- extract_mvabund_pvals(mod.out0)
+
+# timepoint, relative abundance
+set.seed(17)
+mod1 <- manyglm(species.data ~ as.factor(wide.final20$timepoint), family = "negative.binomial")
+mod.out1 <- anova(mod1, pairwise.comp = as.factor(wide.final20$timepoint), p.uni = 'adjusted', test = 'LR')
+print(mod.out1)
+pvals_timepoint <- extract_mvabund_pvals(mod.out1)
+
+# disease presentation, relative abundance
+set.seed(17)
+mod2 <- manyglm(species.data ~ as.factor(wide.final20$treatment_symp), family = "negative.binomial")
+mod.out2 <- anova(mod2, pairwise.comp = as.factor(wide.final20$treatment_symp), p.uni = 'adjusted', test = 'LR')
+print(mod.out2)
+pvals_symp <- extract_mvabund_pvals(mod.out2)
+
+# Bacterial relative abundance model ---------------------------------------
+bac_species_list <- wide_bac_top20 %>%
+  dplyr::select(all_of(top_20_bac_taxa)) %>%
+  select_if(colSums(.) != 0)
+mvabund_bac_data <- mvabund(bac_species_list)
+
+# treatment, relative abundance
+set.seed(17)
+mod_bac_treatment <- manyglm(mvabund_bac_data ~ as.factor(wide_bac_top20$treatment), family = "negative.binomial")
+anova_bac_treatment <- anova(mod_bac_treatment, p.uni = 'adjusted', test = 'LR')
+print(anova_bac_treatment)
+pvals_bac_treatment <- extract_mvabund_pvals(anova_bac_treatment)
+
+# timepoint, relative abundance
+set.seed(17)
+mod_bac_timepoint <- manyglm(mvabund_bac_data ~ as.factor(wide_bac_top20$timepoint), family = "negative.binomial")
+anova_bac_timepoint <- anova(mod_bac_timepoint, pairwise.comp = as.factor(wide_bac_top20$timepoint), p.uni = 'adjusted', test = 'LR')
+print(anova_bac_timepoint)
+pvals_bac_timepoint <- extract_mvabund_pvals(anova_bac_timepoint)
+
+# disease presentation, relative abundance
+set.seed(17)
+mod_bac_symp <- manyglm(mvabund_bac_data ~ as.factor(wide_bac_top20$treatment_symp), family = "negative.binomial")
+anova_bac_symp <- anova(mod_bac_symp, pairwise.comp = as.factor(wide_bac_top20$treatment_symp), p.uni = 'adjusted', test = 'LR')
+print(anova_bac_symp)
+pvals_bac_symp <- extract_mvabund_pvals(anova_bac_symp)
+
+#relative abundance of R. solani across treatment groups
+#by treatment 
+df_thanat$treatment <- factor(df_thanat$treatment, 
+                              levels = c("none", "mock", "rhiz"), 
+                              labels = c("Pre-treatment", "Mock", "R. solani"))
+summary_stats_treatment <- df_thanat %>%
+  group_by(treatment) %>%
+  summarize(
+    mean_val = mean(`Thanatephorus cucumeris`, na.rm = TRUE),
+    sd_val = sd(`Thanatephorus cucumeris`, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+print(summary_stats_treatment)
+kruskal_treatment <- kruskal.test(`Thanatephorus cucumeris` ~ treatment, data = df_thanat)
+print(kruskal_treatment)
+pairwise_treatment <- pairwise.wilcox.test(df_thanat$`Thanatephorus cucumeris`, 
+                                           df_thanat$treatment, 
+                                           p.adjust.method = "BH", 
+                                           exact = FALSE)
+print(pairwise_treatment)
+
+#by disease presentation 
+df_symp <- df_thanat[!is.na(df_thanat$treatment_symp), ]
+df_symp$treatment_symp <- factor(df_symp$treatment_symp, 
+                                 levels = c("mock_na", "rhiz_no", "rhiz_yes"),
+                                 labels = c("Mock", "Asymptomatic", "Symptomatic"))
+
+#summary stats
+summary_stats_symp <- aggregate(`Thanatephorus cucumeris` ~ treatment_symp, 
+                                data = df_symp, 
+                                FUN = function(x) c(mean = mean(x), sd = sd(x)))
+print(summary_stats_symp)
+kruskal_symp <- kruskal.test(`Thanatephorus cucumeris` ~ treatment_symp, data = df_symp)
+print(kruskal_symp)
+pairwise_symp <- pairwise.wilcox.test(df_symp$`Thanatephorus cucumeris`, 
+                                      df_symp$treatment_symp, 
+                                      p.adjust.method = "BH", 
+                                      exact = FALSE)
+print(pairwise_symp)
