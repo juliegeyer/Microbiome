@@ -1,4 +1,3 @@
-# 1. Load Packages -------------------------------------------------------------
 library(tidyverse) 
 library(lmerTest)
 library(vegan)
@@ -13,7 +12,6 @@ library(emmeans)
 library(ggpattern)
 library(ggplot2)
 
-# Custom functions -------------------------------------------------------------
 extract_mvabund_pvals <- function(anova_output) {
   tests <- anova_output$uni.test %>%
     as.data.frame() %>%
@@ -29,7 +27,6 @@ extract_mvabund_pvals <- function(anova_output) {
     dplyr::filter(!is.na(test))
 }
 
-# Read in data -----------------------------------------------------------------
 # metadata
 ch316s              <- read_csv("ch3-16s-metadata-rm-none.csv")
 ch3its              <- read_csv("ch3-its-metadata-rm-none_norhizorcoll.csv")
@@ -45,8 +42,8 @@ b.matrix.csv.its <- read_csv('distance-matrix_its_ch3.csv') %>%
   column_to_rownames(var = '...1') %>%
   as.matrix()
 
-# Clean data -------------------------------------------------------------------
-# Convert variables to factors/numerical and log transform richness efficiently
+#clean 
+# convert variables to factors/numerical and log transform richness 
 ch316s <- ch316s %>%
   mutate(
     across(c(timepoint, treatment, growth.chamber, symptoms), as.factor),
@@ -60,7 +57,7 @@ ch3its <- ch3its %>%
     logobserved.features = log10(observed.features)
   )
 
-# Clean and reformat data for relative abundance models ------------------------
+# clean and reformat data for relative abundance models 
 # FUNGI: Extract top 20 genus list and filter
 genustop20 <- final.community.phy %>%
   pivot_longer(cols = 12:97, names_to = "Genus", values_to = "abundance") %>% 
